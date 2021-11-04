@@ -13,11 +13,10 @@ import torch
 import argparse
 import time
 import numpy as np
-
+import lrm_fp
 from open_spiel.python import policy
 from open_spiel.python import rl_environment
 from open_spiel.python.algorithms import exploitability
-from lrm_fp import lrm_fp
 from utils.exper_logger import Logger
 
 
@@ -60,7 +59,7 @@ def main():
 
     parser = argparse.ArgumentParser("NFSP LONR in leduc args.")
     parser.add_argument('--seed', type=int, default=int(0), help="random seed")
-    parser.add_argument('--results_dir', type=str, default="simple", help="log direction of nfsp-lonr experiments")
+    parser.add_argument('--results_dir', type=str, default="default", help="log direction of nfsp-lonr experiments")
     parser.add_argument('--num_train_episodes', type=int,  default=int(10e6), help="Number of training episodes.")
     parser.add_argument('--eval_every', type=int,  default=int(10000), help="Episode frequency at which agents are evaluated.")
     parser.add_argument('--hidden_layers_sizes', type=list, default=[128, ], help= "Number of hidden units in the avg-net and Q-net.")
@@ -89,7 +88,7 @@ def main():
     info_state_size = env.observation_spec()["info_state"][0]
     num_actions = env.action_spec()["num_actions"]
 
-    absolute_dir = "./liars_dice_nfsp_lonr_no_pi"
+    absolute_dir = "./liars_dice_lrm_fp"
     final_dir = os.path.join(absolute_dir, args.results_dir)
 
     logger = Logger(final_dir)

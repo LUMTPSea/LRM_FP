@@ -27,7 +27,7 @@ import enum
 import os
 import argparse
 import random
-
+import arm
 from absl import logging
 import numpy as np
 
@@ -35,7 +35,6 @@ import torch
 import torch.nn.functional as F
 
 from open_spiel.python import rl_agent
-from nfsp_arm import arm
 
 
 Transition = collections.namedtuple(

@@ -25,7 +25,9 @@ import collections
 import contextlib
 import enum
 import os
+import argparse
 import random
+
 from absl import logging
 import numpy as np
 
@@ -33,7 +35,7 @@ import torch
 import torch.nn.functional as F
 
 from open_spiel.python import rl_agent
-from nfsp import dqn_model
+from lrm_fp_example import lrm
 
 
 Transition = collections.namedtuple(
@@ -44,7 +46,7 @@ ILLEGAL_ACTION_LOGITS_PENALTY = -1e9
 MODE = enum.Enum("mode", "best_response average_policy")
 
 
-class NFSP(rl_agent.AbstractAgent):
+class LRM_FP(rl_agent.AbstractAgent):
 	"""NFSP Agent implementation in PyTorch.
 
 	See open_spiel/python/examples/kuhn_nfsp.py for an usage example.
@@ -56,26 +58,20 @@ class NFSP(rl_agent.AbstractAgent):
 				 state_representation_size,
 				 num_actions,
 				 hidden_layers_sizes,
-				 reservoir_buffer_capacity,
-				 anticipatory_param,
-				 batch_size=128,
-				 rl_learning_rate=0.005,
-				 sl_learning_rate=0.01,
-				 min_buffer_size_to_learn=1000,
-				 learn_every=64,
-				 optimizer_str="sgd",
-				 **kwargs):
+				 checkpoint_dir, 
+				 args
+				 ):
 		"""Initialize the `NFSP` agent."""
 		self._device = device
 		self.player_id = player_id
 		self._num_actions = num_actions
 		self._layer_sizes = hidden_layers_sizes
-		self._batch_size = batch_size
-		self._learn_every = learn_every
-		self._anticipatory_param = anticipatory_param
-		self._min_buffer_size_to_learn = min_buffer_size_to_learn
+		self._batch_size = args.batch_size
+		self._learn_every = args.learn_every
+		self._anticipatory_param = args.anticipatory_param
+		self._min_buffer_size_to_learn = args.min_buffer_size_to_learn
 
-		self._reservoir_buffer = ReservoirBuffer(reservoir_buffer_capacity)
+		self._reservoir_buffer = ReservoirBuffer(args.reservoir_buffer_capacity)
 		self._prev_timestep = None
 		self._prev_action = None
 
@@ -83,39 +79,39 @@ class NFSP(rl_agent.AbstractAgent):
 		self._step_counter = 0
 
 		# Inner RL agent
-		kwargs.update({
-			"batch_size": batch_size,
-			"learning_rate": rl_learning_rate,
-			"learn_every": learn_every,
-			"min_buffer_size_to_learn": min_buffer_size_to_learn,
-			"optimizer_str": optimizer_str,
-		})
-		self._rl_agent = dqn_model.DQN(device, player_id, state_representation_size,
-									   num_actions, hidden_layers_sizes, **kwargs)
+
+		self._rl_agent = lrm.LRM(device, player_id, state_representation_size,
+									   num_actions, hidden_layers_sizes, args)
 
 		# Keep track of the last training loss achieved in an update step.
 		self._last_rl_loss_value = lambda: self._rl_agent.loss
 		self._last_sl_loss_value = None
 
 		# Average policy network.
-		self._avg_network = dqn_model.MLP(state_representation_size,
+		self._avg_network = lrm.MLP(state_representation_size,
 										  self._layer_sizes, num_actions).to(self._device)
 
 		self._savers = [
 			("q_network", self._rl_agent._q_network),
+			# ("pi_network", self._rl_agent._policy_logits), 
 			("avg_network", self._avg_network)
 		]
 
-		if optimizer_str == "adam":
+		if args.optimizer_str == "adam":
 			self.optimizer = torch.optim.Adam(
-				self._avg_network.parameters(), lr=sl_learning_rate)
-		elif optimizer_str == "sgd":
+				self._avg_network.parameters(), lr=args.sl_learning_rate)
+		elif args.optimizer_str == "sgd":
 			self.optimizer = torch.optim.SGD(
-				self._avg_network.parameters(), lr=sl_learning_rate)
+				self._avg_network.parameters(), lr=args.sl_learning_rate)
 		else:
 			raise ValueError("Not implemented. Choose from ['adam', 'sgd'].")
 
 		self._sample_episode_policy()
+
+		torch.manual_seed(args.seed)
+		torch.cuda.manual_seed_all(args.seed)
+		torch.backends.cudnn.deterministic = True
+		np.random.seed(args.seed)
 
 	@contextlib.contextmanager
 	def temp_mode_as(self, mode):
@@ -133,8 +129,7 @@ class NFSP(rl_agent.AbstractAgent):
 
 	def _act(self, info_state, legal_actions):
 		info_state = np.reshape(info_state, [1, -1])
-		action_values = self._avg_network(
-			torch.FloatTensor(info_state).to(self._device))
+		action_values = self._avg_network(torch.FloatTensor(info_state).to(self._device))
 		action_probs = F.softmax(action_values, dim=1).detach().cpu().numpy()
 
 		self._last_action_values = action_values[0]
@@ -156,7 +151,7 @@ class NFSP(rl_agent.AbstractAgent):
 
 	@property
 	def loss(self):
-		return (self._last_sl_loss_value, self._last_rl_loss_value().detach())
+		return (self._last_sl_loss_value, self._last_rl_loss_value())
 
 	def step(self, time_step, is_evaluation=False):
 		"""Returns the action to be taken and updates the Q-networks if needed.
@@ -169,7 +164,11 @@ class NFSP(rl_agent.AbstractAgent):
 		  A `rl_agent.StepOutput` containing the action probs and chosen action.
 		"""
 		if self._mode == MODE.best_response:
-			agent_output = self._rl_agent.step(time_step, is_evaluation)
+			info_state = time_step.observations["info_state"][self.player_id]
+			info_state = np.reshape(info_state, [1, -1])
+			action_values = self._avg_network(torch.FloatTensor(info_state).to(self._device))
+			avg_pi = F.softmax(action_values, dim=1).detach()[0]
+			agent_output = self._rl_agent.step(time_step, avg_pi,  is_evaluation)
 			if not is_evaluation and not time_step.last():
 				self._add_transition(time_step, agent_output)
 
@@ -180,6 +179,7 @@ class NFSP(rl_agent.AbstractAgent):
 				legal_actions = time_step.observations["legal_actions"][self.player_id]
 				action, probs = self._act(info_state, legal_actions)
 				agent_output = rl_agent.StepOutput(action=action, probs=probs)
+				# self._rl_agent.add_policy_data(info_state=info_state, matched_regret=probs)
 
 			if self._prev_timestep and not is_evaluation:
 				self._rl_agent.add_transition(self._prev_timestep, self._prev_action,
@@ -194,7 +194,8 @@ class NFSP(rl_agent.AbstractAgent):
 				self._last_sl_loss_value = self._learn()
 				# If learn step not triggered by rl policy, learn.
 				if self._mode == MODE.average_policy:
-					self._rl_agent.learn()
+					self._rl_agent._update_q()
+					# self._rl_agent._update_pi()
 
 			# Prepare for the next episode.
 			if time_step.last():

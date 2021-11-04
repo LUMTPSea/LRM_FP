@@ -111,7 +111,7 @@ class MLP(nn.Module):
             x = layer(x)
         return x
 
-class RegretDQN(rl_agent.AbstractAgent):
+class LRM(rl_agent.AbstractAgent):
     def __init__(self, 
         device, 
         player_id, 
@@ -121,9 +121,6 @@ class RegretDQN(rl_agent.AbstractAgent):
         args, 
         replay_buffer_capacity=int(1e4), 
         replay_buffer_class=ReplayBuffer, 
-
-        epsilon_start=0.06, 
-        epsilon_end=0.00001, 
         ):
 
         self._kwargs = locals()

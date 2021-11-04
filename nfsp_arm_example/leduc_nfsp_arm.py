@@ -12,10 +12,11 @@ import os
 import torch
 import argparse
 import numpy as np
+import nfsp_arm
+
 from open_spiel.python import policy
 from open_spiel.python import rl_environment
 from open_spiel.python.algorithms import exploitability
-from lrm_fp import lrm_fp
 from utils.exper_logger import Logger
 
 
@@ -68,8 +69,15 @@ def main():
 
     parser.add_argument('--sl_learning_rate', type=float,default=0.001, help="Learning rate for avg-policy sl network.")
     parser.add_argument('--rl_q_learning_rate', type=float,default=0.001, help="Learning rate for inner rl q network learning rate.")
-    parser.add_argument('--rl_pi_learning_rate', type=float,default=0.001, help="Learning rate for inner rl pi network learning rate.")
+    parser.add_argument('--rl_v_learning_rate', type=float,default=0.001, help="Learning rate for inner rl pi network learning rate.")
     parser.add_argument('--discount_factor', type=float, default=1.0, help="Discount factor for future rewards.")
+    
+    parser.add_argument('--arm_target_step_size',type=float,  default=0.01, help= "Target value function parameters are updated via moving average with this rate.")
+    
+
+    parser.add_argument('--critic_update_num', default=int(2), help="Number of every collected data being trained")
+    parser.add_argument('--train_batch_size', type=int,default=int(64), help="Number of steps between learning updates.")
+
     parser.add_argument('--min_buffer_size_to_learn', default=int(1000), help="Number of samples in buffer before learning begins.")
     parser.add_argument('--optimizer_str', default="adam", help="choose from 'adam' and 'sgd'.")
     parser.add_argument('--use_checkpoints', default=True, help="Save/load neural network weights.")
@@ -87,8 +95,9 @@ def main():
     info_state_size = env.observation_spec()["info_state"][0]
     num_actions = env.action_spec()["num_actions"]
 
-    absolute_dir = "./leduc_nfsp_lonr_no_pi"
-    final_dir = os.path.join(absolute_dir, args.results_dir)
+    absolute_dir = "./leduc_nfsp_arm"
+    # final_dir = os.path.join(absolute_dir, args.optimizer_str, args.loss_str)
+    final_dir = os.path.join(absolute_dir, args.results_dir)  # 只有arm的保存路径
 
     logger = Logger(final_dir)
 
@@ -103,10 +112,10 @@ def main():
     hidden_layers_sizes = [int(l) for l in args.hidden_layers_sizes]
 
     agents = [
-        lrm_fp.LRM_FP(device, idx, info_state_size, num_actions, hidden_layers_sizes, checkpoint_dir, args) 
+        nfsp_arm.NFSP_ARM(device, idx, info_state_size, num_actions, hidden_layers_sizes, checkpoint_dir, args) 
             for idx in range(num_players)
     ]
-    expl_policies_avg = NFSPPolicies(env, agents, lrm_fp.MODE.average_policy)
+    expl_policies_avg = NFSPPolicies(env, agents, nfsp_arm.MODE.best_response)
     for ep in range(args.num_train_episodes):
         if (ep+1) % args.eval_every == 0:
             losses = [agent.loss for agent in agents]
@@ -131,7 +140,7 @@ def main():
         for agent in agents:
             agent.step(time_step)
     logger.close_files()
-    logger.plot('leduc_lrm_fp')
+    logger.plot('leduc_nfsp_lonr_arm')
 
 if __name__ == "__main__":
     main()

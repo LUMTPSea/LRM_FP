@@ -11,11 +11,11 @@ from __future__ import print_function
 import os
 import torch
 import argparse
+import lrm_fp
 import numpy as np
 from open_spiel.python import policy
 from open_spiel.python import rl_environment
 from open_spiel.python.algorithms import exploitability
-from nfsp_arm import nfsp_arm
 from utils.exper_logger import Logger
 
 
@@ -53,12 +53,12 @@ class NFSPPolicies(policy.Policy):
     return prob_dict
 
 def main():
-    game = "liars_dice"
+    game = "leduc_poker"
     num_players = 2
 
     parser = argparse.ArgumentParser("NFSP LONR in leduc args.")
     parser.add_argument('--seed', type=int, default=int(0), help="random seed")
-    parser.add_argument('--results_dir', type=str, default="simple", help="log direction of nfsp-lonr experiments")
+    parser.add_argument('--results_dir', type=str, default="default", help="log direction of nfsp-lonr experiments")
     parser.add_argument('--num_train_episodes', type=int,  default=int(20e6), help="Number of training episodes.")
     parser.add_argument('--eval_every', type=int,  default=int(10000), help="Episode frequency at which agents are evaluated.")
     parser.add_argument('--hidden_layers_sizes', type=list, default=[128, ], help= "Number of hidden units in the avg-net and Q-net.")
@@ -68,16 +68,8 @@ def main():
 
     parser.add_argument('--sl_learning_rate', type=float,default=0.001, help="Learning rate for avg-policy sl network.")
     parser.add_argument('--rl_q_learning_rate', type=float,default=0.001, help="Learning rate for inner rl q network learning rate.")
-    parser.add_argument('--rl_v_learning_rate', type=float,default=0.001, help="Learning rate for inner rl pi network learning rate.")
+    parser.add_argument('--rl_pi_learning_rate', type=float,default=0.001, help="Learning rate for inner rl pi network learning rate.")
     parser.add_argument('--discount_factor', type=float, default=1.0, help="Discount factor for future rewards.")
-    
-    parser.add_argument('--arm_target_step_size',type=float,  default=0.01, help= "Target value function parameters are updated via moving average with this rate.")
-    
-
-# 似乎是没啥用的参数
-    parser.add_argument('--critic_update_num', default=int(2), help="Number of every collected data being trained")
-    parser.add_argument('--train_batch_size', type=int,default=int(64), help="Number of steps between learning updates.")
-
     parser.add_argument('--min_buffer_size_to_learn', default=int(1000), help="Number of samples in buffer before learning begins.")
     parser.add_argument('--optimizer_str', default="adam", help="choose from 'adam' and 'sgd'.")
     parser.add_argument('--use_checkpoints', default=True, help="Save/load neural network weights.")
@@ -95,9 +87,8 @@ def main():
     info_state_size = env.observation_spec()["info_state"][0]
     num_actions = env.action_spec()["num_actions"]
 
-    absolute_dir = "./liars_dice_nfsp_arm"
-    # final_dir = os.path.join(absolute_dir, args.optimizer_str, args.loss_str)
-    final_dir = os.path.join(absolute_dir, args.results_dir)  # 只有arm的保存路径
+    absolute_dir = "./leduc_lrm_fp"
+    final_dir = os.path.join(absolute_dir, args.results_dir)
 
     logger = Logger(final_dir)
 
@@ -112,18 +103,18 @@ def main():
     hidden_layers_sizes = [int(l) for l in args.hidden_layers_sizes]
 
     agents = [
-        nfsp_arm.NFSP_LONR(device, idx, info_state_size, num_actions, hidden_layers_sizes, checkpoint_dir, args) 
+        lrm_fp.LRM_FP(device, idx, info_state_size, num_actions, hidden_layers_sizes, checkpoint_dir, args) 
             for idx in range(num_players)
     ]
-    expl_policies_avg = NFSPPolicies(env, agents, nfsp_arm.MODE.best_response)
+    expl_policies_avg = NFSPPolicies(env, agents, lrm_fp.MODE.average_policy)
     for ep in range(args.num_train_episodes):
         if (ep+1) % args.eval_every == 0:
             losses = [agent.loss for agent in agents]
             # print("Losses: " , losses)
-            value, expl = exploitability.exploitability(env.game, expl_policies_avg)
+            expl = exploitability.exploitability(env.game, expl_policies_avg)
             print("Episode:", ep + 1, "Exploitability AVG", expl)
             print("_____________________________________")
-            logger.log_performance(ep + 1, expl, value)
+            logger.log_performance(ep + 1, expl)
 
             # logging.info("Losses: %s", losses)
             # expl = exploitability.exploitability(env.game, expl_policies_avg)
@@ -140,7 +131,7 @@ def main():
         for agent in agents:
             agent.step(time_step)
     logger.close_files()
-    logger.plot('leduc_nfsp_lonr_arm')
+    logger.plot('leduc_lrm_fp')
 
 if __name__ == "__main__":
     main()
