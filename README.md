@@ -13,9 +13,22 @@ Includes Openspiel PyTorch implementations of LRM-FP, NFSP and NFSP-ARM
 ##### Clone repo with git submodules
 
 ```shell
-git clone --recursive https://github.com/LUMTPSea/LRM_FP
+git clone --recursive https://github.com/kxinhe/LRM_FP
 cd LRM_FP
 ```
 
+##### Set up Conda environment
+Create the new ennvironment for LRM_FP
+```shell
 conda env create -f environment.yml
 conda activate grl
+```
+
+##### Install Python modules
+###### 1.DeepMind OpenSpiel
+DeepMind's OpenSpiel is used for poker game logic as well as tabular game utilities. We include the original dependency.
+```shell
+cd open_spiel
+./install.sh
+pip install -e .
+cd ../..
