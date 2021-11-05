@@ -53,3 +53,12 @@ export PYTHONPATH=$PYTHONPATH:/<path_to_open_spiel_submodule>
 # For the Python bindings of Pyspiel
 export PYTHONPATH=$PYTHONPATH:/<path_to_open_spiel_submodule>/build/python
 ```
+
+###### Running examples
+After installation documentation for setting up the environment. 
+###### LRM-FP
+```shell
+cd LRM_FP/lrm_fp_example
+python kuhn_lrm_fp.py 
+```
+
