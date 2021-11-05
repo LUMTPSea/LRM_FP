@@ -62,3 +62,13 @@ cd LRM_FP/lrm_fp_example
 python kuhn_lrm_fp.py 
 ```
 
+###### NFSP
+```shell
+cd LRM_FP/nfsp_example
+python kuhn_model_nfsp_example.py 
+```
+###### NFSP-ARM
+```shell
+cd LRM_FP/nfsp_arm_example
+python kuhn_nfsp_arm.py 
+```
